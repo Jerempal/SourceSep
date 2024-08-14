@@ -76,9 +76,6 @@ class MixtureDataset(Dataset):
             # 'noise percussion_audio': noise_audio,
         }
 
-
-# transform function, get the magnitude and phase of the stft
-
 # Define the dataset
 
 

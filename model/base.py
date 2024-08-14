@@ -1,8 +1,7 @@
-import torch.nn as nn
 import torch
+import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
-import math
 from torchlibrosa.stft import magphase
 
 
@@ -35,7 +34,8 @@ class Base:
         sin_list = []
         channels_num = input.shape[1]
         for channel in range(channels_num):
-            mag, cos, sin = self.spectrogram_phase(input[:, channel, :], eps=eps)
+            mag, cos, sin = self.spectrogram_phase(
+                input[:, channel, :], eps=eps)
             sp_list.append(mag)
             cos_list.append(cos)
             sin_list.append(sin)
@@ -80,5 +80,5 @@ class Base:
             wav_list.append(self.istft(spectrogram[:, channel: channel + 1, :, :] * cos,
                                        spectrogram[:, channel: channel + 1, :, :] * sin, length))
 
-        output = torch.stack(wav_list, dim=1) 
+        output = torch.stack(wav_list, dim=1)
         return output

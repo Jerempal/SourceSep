@@ -1,19 +1,18 @@
 # %%
-
-# %%
-
+import soundfile as sf
 import random
 import pandas as pd
-from data.config import *
-from data.dataset import *
 from train import train
-from data.utils import *
 from torch.utils.data import DataLoader
 from torch import optim
 from model.Last_model import *
 from metrics_loss import *
 from test import test, process_metadata, DATASET_PREDICTED_AUDIO_PATH, noise_name
+from data.utils import *
+from data.config import *
+from data.dataset import *
 
+# %%
 # We have 7358 sounds of differents classes (dog bark, drilling, jackhammer, siren, children_playing, engine idling, air conditioner, car horn) with a duration of maximum 4 seconds some are shorter
 # 387 files of the percussions class that we want to separate from the others or "hear" better
 
@@ -21,6 +20,9 @@ from test import test, process_metadata, DATASET_PREDICTED_AUDIO_PATH, noise_nam
 metadata = pd.read_csv(os.path.join(
     DATASET_MIX_AUDIO_PATH, "metadata.csv"))
 
+
+
+# %%
 # define the train, validation and test sets
 
 dataset = MixtureDataset(metadata_file=metadata, k=0.8,
@@ -32,7 +34,7 @@ test_size = len(dataset) - train_size - val_size
 train_dataset, val_dataset, test_dataset = torch.utils.data.random_split(
     dataset, [train_size, val_size, test_size])
 
-#%%
+# %%
 
 # Create data loaders
 train_loader = DataLoader(train_dataset, batch_size=20, shuffle=True)
@@ -131,8 +133,7 @@ df, noise_name = process_metadata(
 # print(f'path of mix saved', os.path.abspath("mixture_audio.wav"))
 
 # # %%
-#%%
-import soundfile as sf
+# %%
 
 for file in os.listdir(DATASET_PREDICTED_AUDIO_PATH):
     if file.endswith(".csv"):

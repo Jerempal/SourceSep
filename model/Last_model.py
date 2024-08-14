@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchsummary as summary
 from torchlibrosa.stft import STFT, ISTFT, magphase
-from base import Base
+from model.base import Base
 import numpy as np
 from typing import Tuple, Dict, NoReturn
 

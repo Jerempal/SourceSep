@@ -205,9 +205,6 @@ class MultiTaskResUNet(nn.Module):
 def multi_task_loss(separation_output, classification_output, true_percussion, true_class, alpha=0.7, beta=0.3):
     mse_loss = nn.MSELoss()
 
-    # Ensure true_class is of type torch.LongTensor
-    true_class = true_class.long()
-
     separation_loss = mse_loss(separation_output, true_percussion)
     classification_loss = nn.CrossEntropyLoss()(classification_output, true_class)
 
