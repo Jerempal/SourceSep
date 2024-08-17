@@ -1,4 +1,7 @@
 # %%
+import pandas as pd
+import os
+import torchsummary as summary
 import soundfile as sf
 import matplotlib.pyplot as plt
 from tqdm.gui import tqdm as tqdm_gui
@@ -9,10 +12,13 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from data.dataset import AudioDataset
+
+# from data.dataset import AudioMixtureDatasetWithMetadata  
+from data.dataset import AudioMixtureDatasetWithLoudnorm
 from data.config import *
 from torchlibrosa.stft import magphase, STFT, ISTFT
 import librosa as lib
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, in_c, out_c, stride=1):
@@ -71,79 +77,115 @@ class DecoderBlock(nn.Module):
 
 
 class ResUNet(nn.Module):
-    def __init__(self, in_channels, base_channels):
+    def __init__(self, in_c, out_c, num_classes):
         super(ResUNet, self).__init__()
-    
-        # Encoder
+
+        """ Encoder 1 """
         self.encoder_block1 = nn.Sequential(
-            nn.Conv2d(in_channels, base_channels,
+            nn.Conv2d(in_c, out_c,
                       kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(base_channels),
+            nn.BatchNorm2d(out_c),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(base_channels, base_channels,
+            nn.Conv2d(out_c, out_c,
                       kernel_size=3, stride=1, padding=1),
         )
 
-        self.shortcut1 = nn.Conv2d(
-            in_channels, base_channels, kernel_size=1, padding=0)
+        """ Shortcut Connection """
+        self.shortcut = nn.Conv2d(
+            in_c, out_c, kernel_size=1, padding=0)
 
+        """ Encoder 2 and 3"""
         self.encoder_block2 = ResidualBlock(
-            base_channels, base_channels * 2, stride=2)
+            out_c, out_c * 2, stride=2)
         self.encoder_block3 = ResidualBlock(
-            base_channels * 2, base_channels * 4, stride=2)
+            out_c * 2, out_c * 4, stride=2)
 
-        # Bridge (bottleneck)
+        """ Bridge """
         self.bridge = ResidualBlock(
-            base_channels * 4, base_channels * 8, stride=2)
+            out_c * 4, out_c * 8, stride=2)
 
-        # Decoder
+        """ Decoder """
         self.decoder_block1 = DecoderBlock(
-            base_channels * 8, base_channels * 4)
+            out_c * 8, out_c * 4)
         self.decoder_block2 = DecoderBlock(
-            base_channels * 4, base_channels * 2)
+            out_c * 4, out_c * 2)
         self.decoder_block3 = DecoderBlock(
-            base_channels * 2, base_channels)
+            out_c * 2, out_c)
 
-        # Combined output layer
+        """ Output """
         self.output = nn.Sequential(
-            nn.Conv2d(base_channels, 3, kernel_size=1, padding=0),
+            nn.Conv2d(out_c, 3, kernel_size=1, padding=0),
+        )
+
+        # # outputs for the masks
+        # self.mag_mask = nn.Sequential(
+        #     nn.Conv2d(out_c, 1, kernel_size=1, padding=0),
+        #     nn.Sigmoid()
+        # )
+
+        # self.RealImag = nn.Sequential(
+        #     nn.Conv2d(out_c, 2, kernel_size=1, padding=0),
+        #     nn.Tanh()
+        # )
+
+        # Classification head
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(out_c, num_classes),
+            nn.Sigmoid()
         )
 
     def forward(self, x):
 
         x = x.unsqueeze(1)
-        # Encoder
-        encoder1 = self.encoder_block1(x) + self.shortcut1(x)
+
+        """ Encoder 1, 2 and 3 """
+        encoder1 = self.encoder_block1(x) + self.shortcut(x)
         encoder2 = self.encoder_block2(encoder1)
         encoder3 = self.encoder_block3(encoder2)
 
-        # Bridge
+        """ Bridge """
         bridge = self.bridge(encoder3)
 
-        # Decoder
+        """ Decoder """
         decoder1 = self.decoder_block1(bridge, encoder3)
         decoder2 = self.decoder_block2(decoder1, encoder2)
         decoder3 = self.decoder_block3(decoder2, encoder1)
 
-        # Combined output layer
+        """ Output """
         output = self.output(decoder3)
 
-        mag_mask = torch.sigmoid(output[:, 0, :, :])
-        real_mask = torch.tanh(output[:, 1, :, :])
-        imag_mask = torch.tanh(output[:, 2, :, :])
-
         output_masks_dict = {
-            'mag_mask': mag_mask,
-            'real_mask': real_mask,
-            'imag_mask': imag_mask
+            'mag_mask': torch.sigmoid(output[:, 0, :, :]),
+            'real_mask': torch.tanh(output[:, 1, :, :]),
+            'imag_mask': torch.tanh(output[:, 2, :, :])
         }
 
-        return output_masks_dict
+        # Classification head
+        class_output = self.classifier(decoder3)
 
-# Spectrogram reconstruction class
+        # # outputs for the masks
+        # mag_mask = self.mag_mask(decoder3)
+        # real_imag_mask = self.RealImag(decoder3)
+
+        # output_masks_dict = {
+        #     'mag_mask': mag_mask,
+        #     'real_mask': real_imag_mask[:, 0, :, :],
+        #     'imag_mask': real_imag_mask[:, 1, :, :]
+        # }
+
+        return output_masks_dict, class_output
+
+        # return output_masks_dict
+
 
 # %%
+# model = ResUNet(1, 64).to('cuda')
+# summary.summary(model, (129, 489))
 
+# %%
+# Spectrogram reconstruction class
 
 
 class SpectrogramReconstructor:
@@ -158,10 +200,9 @@ class SpectrogramReconstructor:
 
     def reconstruct(self, mag_mask, real_mask, imag_mask, mix_stft):
 
-        
         mix_mag, mix_cos, mix_sin = self.magphase(mix_stft.real, mix_stft.imag)
         _, mask_cos, mask_sin = self.magphase(real_mask, imag_mask)
-        
+
         # calculate the |Y| = |M| * |X|
         estimated_mag = mag_mask * mix_mag
 
@@ -186,45 +227,62 @@ def istft(y_complex, n_fft, hop_length):
 
 # %%
 # Training loop
-model = ResUNet(1, 64).to('cuda')
+model = ResUNet(1, 32, 8).to('cuda')
 criterion = nn.L1Loss()
-# optimizer = optim.Adam(model.parameters(), lr=0.001)
-optimizer = optim.AdamW(model.parameters(), lr=0.001, amsgrad=True)
-# optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+
+# optimizer = optim.AdamW(model.parameters(), lr=0.001, amsgrad=True)
+optimizer = optim.SGD(model.parameters(), lr=0.001,
+                      momentum=0.9, nesterov=True)
+
 reconstructor = SpectrogramReconstructor()
 
-dataset = AudioDataset()
+# Load metadata
+metadata = pd.read_csv(os.path.join(
+    DATASET_MIX_AUDIO_PATH, "metadata.csv"))
+
+# dataset = AudioDataset()
+# dataset = AudioMixtureDatasetWithMetadata(
+#     metadata_file=metadata, max_noise_classes=8, noise_classes='siren')
+
+dataset = AudioMixtureDatasetWithLoudnorm(
+    metadata_file=metadata, max_noise_class=2, noise_classes=['air_conditioner', 'engine_idling'], random_noise=True)
+
 train_data, test_data = torch.utils.data.random_split(
     dataset, [int(0.8 * len(dataset)), len(dataset) - int(0.8 * len(dataset))])
 train_data, val_data = torch.utils.data.random_split(train_data, [int(
     0.8 * len(train_data)), len(train_data) - int(0.8 * len(train_data))])
 
-train_loader = DataLoader(train_data, batch_size=20, shuffle=True)
-val_loader = DataLoader(val_data, batch_size=20, shuffle=False)
-test_loader = DataLoader(test_data, batch_size=8, shuffle=False)
+train_loader = DataLoader(train_data, batch_size=64, shuffle=True)
+val_loader = DataLoader(val_data, batch_size=64, shuffle=False)
+test_loader = DataLoader(test_data, batch_size=64, shuffle=False)
 
+#%%
 
-# %%
-
-num_epochs = 25
+num_epochs = 5
 n_fft = 256
 hop_length = 64
 best_val_loss = np.inf  # Initialize with infinity
-patience = 5 # Stop training after 3 epochs of validation loss not improving
+patience = 5  # Stop training after 3 epochs of validation loss not improving
 train_loss = []
 val_losss = []
+
 for epoch in range(num_epochs):
     model.train()
     running_loss = 0.0
     train_bar = tqdm(train_loader, desc=f"Epoch {epoch + 1}/{num_epochs} Training Loss: {running_loss:.4f}",
                      colour='green')
     for i, batch in enumerate(train_bar):
-        mix_stft = batch['mixture_stft'].to('cuda')
+        # mix_stft = batch['mixture_stft'].to('cuda')
+        # target_waveform = batch['percussion_audio'].to('cuda')
+        mixture_audio = batch['mixture_audio'].to('cuda')
         target_waveform = batch['percussion_audio'].to('cuda')
-
+        noise_labels = batch['noise_labels'].to('cuda')
+        
+        mix_stft = torch.stft(mixture_audio, n_fft, hop_length, window=torch.hann_window(256, device='cuda'), return_complex=True)
+        
         optimizer.zero_grad()
 
-        output_masks_dict = model(torch.abs(mix_stft))
+        output_masks_dict, class_ouput = model(torch.abs(mix_stft))
         mag_mask = output_masks_dict['mag_mask']
         real_mask = output_masks_dict['real_mask']
         imag_mask = output_masks_dict['imag_mask']
@@ -255,9 +313,14 @@ for epoch in range(num_epochs):
 
     with torch.no_grad():
         for i, batch in enumerate(val_bar):
-            mix_stft = batch['mixture_stft'].to('cuda')
+            # mix_stft = batch['mixture_stft'].to('cuda')
+            # target_waveform = batch['percussion_audio'].to('cuda')
+            mixture_audio = batch['mixture_audio'].to('cuda')
             target_waveform = batch['percussion_audio'].to('cuda')
-
+            noise_labels = batch['noise_labels'].to('cuda')
+            
+            mix_stft = torch.stft(mixture_audio, n_fft, hop_length, window=torch.hann_window(256, device='cuda'), return_complex=True)
+        
             output_masks_dict = model(torch.abs(mix_stft))
             mag_mask = output_masks_dict['mag_mask']
             real_mask = output_masks_dict['real_mask']
@@ -281,15 +344,15 @@ for epoch in range(num_epochs):
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
-            torch.save(model.state_dict(), 'best_model.pth')
+            torch.save(model.state_dict(), 'best_model_1708.pth')
             print(f'Validation loss decreased, saving model...')
         else:
             patience -= 1
             if patience == 0:
                 print('Early stopping...')
-                
+
                 break
-            
+
 print('Finished Training')
 
 
@@ -365,14 +428,14 @@ for idx in range(Y_waveform_np.shape[0]):
     plt.title('Mixture Audio')
     plt.xlabel('Time')
     plt.ylabel('Amplitude')
-    
+
     plt.subplot(4, 1, 4)
     plt.plot(noise[idx].cpu().numpy())
     # plt.title('Noise Audio with class: ' + str(batch['noise_class']))
     plt.title('Noise Audio')
     plt.xlabel('Time')
     plt.ylabel('Amplitude')
-    
+
     plt.tight_layout()
     plt.show()
 
@@ -386,9 +449,9 @@ for idx in range(Y_waveform_np.shape[0]):
     Y_waveform_np[idx] /= np.max(np.abs(Y_waveform_np[idx]))
     target_waveform[idx] /= np.max(np.abs(target_waveform[idx]))
     noise[idx] /= np.max(np.abs(noise[idx]))
-    
-    
-#%%
+
+
+# %%
 plt.figure(figsize=(10, 10))
 for idx in range(Y_waveform_np.shape[0]):
     plt.subplot(4, 1, 1)
@@ -408,14 +471,14 @@ for idx in range(Y_waveform_np.shape[0]):
     plt.title('Mixture Audio')
     plt.xlabel('Time')
     plt.ylabel('Amplitude')
-    
+
     plt.subplot(4, 1, 4)
     plt.plot(noise[idx])
     # plt.title('Noise Audio with class: ' + str(batch['noise_class']))
     plt.title('Noise Audio')
     plt.xlabel('Time')
     plt.ylabel('Amplitude')
-    
+
     plt.tight_layout()
     plt.show()
 # %%
@@ -425,5 +488,5 @@ for idx in range(Y_waveform_np.shape[0]):
     sf.write(f'target_audio_{idx}.wav', target_waveform[idx], 7812)
     sf.write(f'mixture_audio_{idx}.wav', mixtures[idx].cpu().numpy(), 7812)
     sf.write(f'noise_audio_{idx}.wav', noise[idx], 7812)
-    
+
 # %%

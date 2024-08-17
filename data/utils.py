@@ -3,6 +3,8 @@ import librosa
 import torch
 import matplotlib.pyplot as plt
 import os
+import random
+
 n_fft = 256
 hop_length = n_fft // 4
 
@@ -68,6 +70,15 @@ def pad_audio_center(audio_path, sample_rate=7812, target_length=31248):
     start = (len(audio) - target_length) // 2
     return audio[start:start + target_length]
 
+# def pad_audio_center(audio, target_length=31248):
+
+#     if len(audio) < target_length:
+#         repeat_count = int(np.ceil(target_length / len(audio)))
+#         audio = np.tile(audio, repeat_count)
+
+#     start = (len(audio) - target_length) // 2
+#     return audio[start:start + target_length]
+
 # def pad_audio_center_path(audio_path, sample_rate=7812, target_length=31248):
 #     audio, sr = librosa.load(audio_path, sr=sample_rate)
 
@@ -76,7 +87,6 @@ def pad_audio_center(audio_path, sample_rate=7812, target_length=31248):
 #         audio = np.pad(audio, (pad_len, target_length -
 #                        len(audio) - pad_len), 'constant')
 #     return audio[:target_length]
-
 
 # def pad_audio_center(audio, target_length=31248):
 
@@ -87,6 +97,32 @@ def pad_audio_center(audio_path, sample_rate=7812, target_length=31248):
 #     return audio[:target_length]
 
 
+def dynamic_loudnorm(audio, reference, lower_db=-10, higher_db=10):
+    # Rescale the audio to match the loudness of the reference (percussion)
+    rescaled_audio = rescale_to_match_energy(audio, reference)
+    delta_loudness = random.randint(
+        lower_db, higher_db)  # Random loudness variation
+    gain = np.power(10.0, delta_loudness / 20.0)
+    return gain * rescaled_audio
+
+
+def rescale_to_match_energy(segment1, segment2):
+    ratio = get_energy_ratio(segment1, segment2)
+    return segment1 / ratio
+
+
+def get_energy(x):
+    return torch.mean(x ** 2)
+
+
+def get_energy_ratio(segment1, segment2):
+    energy1 = get_energy(segment1)
+    # Prevent division by zero
+    energy2 = max(get_energy(segment2), 1e-10)
+    ratio = (energy1 / energy2) ** 0.5
+    return torch.clamp(ratio, 0.02, 50)  # Avoid extreme scaling
+
+
 def plot_loss(train_loss, val_loss):
     plt.figure(figsize=(10, 5))
     plt.plot(train_loss, label='train loss')
@@ -95,22 +131,6 @@ def plot_loss(train_loss, val_loss):
     plt.ylabel('Loss')
     plt.legend()
     plt.show()
-
-# def save_checkpoint(model, optimizer, epoch, loss, path='checkpoint.pth'):
-#     torch.save({
-#         'epoch': epoch,
-#         'model_state_dict': model.state_dict(),
-#         'optimizer_state_dict': optimizer.state_dict(),
-#         'loss': loss,
-#     }, path)
-
-# def load_checkpoint(model, optimizer, path='checkpoint.pth'):
-#     checkpoint = torch.load(path)
-#     model.load_state_dict(checkpoint['model_state_dict'])
-#     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-#     epoch = checkpoint['epoch']
-#     loss = checkpoint['loss']
-#     return model, optimizer, epoch, loss
 
 
 def save_checkpoint(model, optimizer, epoch, loss, checkpoint_dir='checkpoints', filename='checkpoint.pth'):

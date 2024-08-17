@@ -1,27 +1,28 @@
 # %%
-import seaborn as sns
-from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
 import torchsummary as summary
 import librosa.display
 import librosa
 import matplotlib.pyplot as plt
 import soundfile as sf
 import os
+import numpy as np  
 import pandas as pd
+import numba as nb
+import dask as dk
+import joblib as jl
 import torch
-from torch.optim import AdamW
-import torch.nn.functional as F
-import numpy as np
 import torch.nn as nn
+import torch.nn.functional as F
+from torch.optim import AdamW
 from data.config import *
-from data.dataset import MixtureDataset, AudioMixtureDataset
+from data.utils import save_checkpoint, load_checkpoint
+# from data.dataset import MixtureDataset, AudioMixtureDataset
+from data.dataset import AudioMixtureDatasetWithLoudnorm
 from tqdm import tqdm
 from torchlibrosa.stft import STFT, ISTFT, magphase
-import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from sklearn.model_selection import train_test_split
-import numpy as np
-from data.utils import save_checkpoint, load_checkpoint
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
 
 torch.backends.cudnn.benchmark = True
 torch.backends.cudnn.enabled = True
@@ -149,7 +150,15 @@ class ResUNet(nn.Module):
         """ Output """
         output = self.output(decoder3)
 
-        return output, skip3
+        # return output, skip3
+        
+        output_masks_dict = {
+            'mag_mask': torch.sigmoid(output[:, 0, :, :]),
+            'real_mask': torch.tanh(output[:, 1, :, :]),
+            'imag_mask': torch.tanh(output[:, 2, :, :])
+        }
+        
+        return output_masks_dict, skip3
 
 # %%
 
@@ -165,32 +174,49 @@ class MultiTaskResUNet(nn.Module):
         super().__init__()
         self.resunet = ResUNet(in_c=1, out_c=32)
 
-        self.classifier = nn.Sequential(
-            nn.Conv2d(128, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # Add max pooling here
-            nn.Dropout(0.3),
-            nn.Conv2d(64, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
-            nn.ReLU(),
-            nn.MaxPool2d(kernel_size=2, stride=2),  # Add max pooling here
-            nn.Dropout(0.3),
-        )
+        # self.classifier = nn.Sequential(
+        #     nn.Conv2d(128, 64, kernel_size=3, padding=1),
+        #     nn.BatchNorm2d(64),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=2, stride=2),  # Add max pooling here
+        #     nn.Dropout(0.3),
+        #     nn.Conv2d(64, 32, kernel_size=3, padding=1),
+        #     nn.BatchNorm2d(32),
+        #     nn.ReLU(),
+        #     nn.MaxPool2d(kernel_size=2, stride=2),  # Add max pooling here
+        #     nn.Dropout(0.3),
+        # )
 
-        # output classifier
-        self.classifier_output = nn.Sequential(
-            nn.Linear(32 * 8 * 30, 64),
+        # # output classifier
+        # self.classifier_output = nn.Sequential(
+        #     nn.Linear(32 * 8 * 30, 64),
+        #     nn.ReLU(),
+        #     nn.Dropout(0.3),
+        #     nn.Linear(64, num_noise_classes),  # Corrected the input size to 64
+        # )
+
+        # Classification head
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)), 
+            nn.Flatten(),
+            nn.Linear(128, 64),
             nn.ReLU(),
             nn.Dropout(0.3),
-            nn.Linear(64, num_noise_classes),  # Corrected the input size to 64
+            nn.Linear(64, num_noise_classes),
+            # nn.Linear(128, num_noise_classes),
+            nn.Sigmoid()
         )
 
     def forward(self, x):
+        
         output, skip3 = self.resunet(x)
+        
+        # x = self.classifier(skip3)
+        # x = torch.flatten(x, start_dim=1)
+        # x = self.classifier_output(x)
+        
         x = self.classifier(skip3)
-        x = torch.flatten(x, start_dim=1)
-        x = self.classifier_output(x)
+        
         return output, x
 
 
@@ -206,13 +232,16 @@ def multi_task_loss(separation_output, classification_output, true_percussion, t
     mse_loss = nn.MSELoss()
 
     separation_loss = mse_loss(separation_output, true_percussion)
-    classification_loss = nn.CrossEntropyLoss()(classification_output, true_class)
+    # classification_loss = nn.CrossEntropyLoss()(classification_output, true_class) 1 ere version
+    # classification_loss = nn.BCELoss()(classification_output, F.one_hot(true_class, num_classes=8).float()) #2 eme version 
 
+    classification_loss = nn.BCEWithLogitsLoss()(classification_output, true_class) #3 eme version
+    # classification_loss = nn.BCEWithLogitsLoss()(classification_output, F.one_hot(true_class, num_classes=8).float()) #3 eme version
+        
     loss = alpha * separation_loss + beta * classification_loss
     
-    print(f"Separation Loss: {separation_loss.item()}, Classification Loss: {classification_loss.item()}")
-    
     return loss
+
 
 # %%
 
@@ -225,10 +254,11 @@ metadata = pd.read_csv(os.path.join(
 
 # dataset = MixtureDataset(metadata_file=metadata, k=0.6,
 #                          noise_class=None)
-# dataset = AudioMixtureDataset(metadata_file=metadata, k=0.4,
+# dataset = AudioMixtureDataset(metadata_file=metadata, k=0.4,  
 #                               noise_class='siren')
-dataset = AudioMixtureDataset(metadata_file=metadata, k=None, noise_class=None)
+# dataset = AudioMixtureDataset(metadata_file=metadata, k=None, noise_class=None)
 
+dataset = AudioMixtureDatasetWithLoudnorm(metadata_file=metadata, noise_classes=['engine_idling', 'air_conditioner'], random_noise=True)
 
 # Create train, validation, and test splits
 indices = list(range(len(dataset)))
@@ -238,9 +268,9 @@ train_indices, test_indices = train_test_split(
     train_indices, test_size=0.25, random_state=42)  # 0.25 * 0.8 = 0.2
 
 # Save these indices
-np.save('train_indices.npy', train_indices)
-np.save('val_indices.npy', val_indices)
-np.save('test_indices.npy', test_indices)
+np.save('train_indices_engine_air.npy', train_indices)
+np.save('val_indices_engine_air.npy', val_indices)
+np.save('test_indices_engine_air.npy', test_indices)
 
 # Create data loaders
 train_sampler = SubsetRandomSampler(train_indices)
@@ -253,6 +283,7 @@ test_loader = DataLoader(dataset, sampler=test_sampler, batch_size=32)
 
 # %%
 
+# when using the saved indices
 train_indices = np.load('train_indices.npy')
 val_indices = np.load('val_indices.npy')
 test_indices = np.load('test_indices.npy')
@@ -264,21 +295,6 @@ test_sampler = SubsetRandomSampler(test_indices)
 train_loader = DataLoader(dataset, sampler=train_sampler, batch_size=32)
 val_loader = DataLoader(dataset, sampler=val_sampler, batch_size=32)
 test_loader = DataLoader(dataset, sampler=test_sampler, batch_size=32)
-
-
-# %%
-# test the data loaders
-for batch in train_loader:
-    print(batch['mixture_audio'].shape)
-    print(batch['percussion_audio'].shape)
-    print(batch['noise_class'].shape)
-    break
-
-print(batch['noise_class'])
-
-print(len(train_loader))  # 97
-print(len(val_loader))  # 13
-print(len(test_loader))  # 13
 
 # %%
 
@@ -322,8 +338,9 @@ def istft(y_complex, n_fft, hop_length):
 # %%
 
 # Define the model, optimizer and loss function
-model = MultiTaskResUNet(num_noise_classes=8).to('cuda')
-optimizer = AdamW(model.parameters(), lr=0.001, amsgrad=True)
+model = MultiTaskResUNet(num_noise_classes=8).to("cuda")
+# optimizer = AdamW(model.parameters(), lr=0.001, amsgrad=True)
+optimizer = AdamW(model.parameters(), lr=0.001)
 criterion = multi_task_loss
 device = "cuda"
 
@@ -355,8 +372,9 @@ for epoch in range(start_epoch, num_epochs):
         # Move data to device
         mixture = batch['mixture_audio'].to(device)
         true_percussion = batch['percussion_audio'].to(device)
-        true_class = batch['noise_class'].to(device)
-
+        # true_class = batch['noise_class'].to(device)
+        true_class = batch['noise_labels'].to(device) # ici true class est un tensor de taille (batch_size, 8) avec des 0 et des 1 pour les classes présentes et absentes
+        
         # Calculate real and imaginary parts of the mixture
         mix_stft = torch.stft(mixture, n_fft=256, hop_length=64, win_length=256, window=torch.hann_window(
             window_length=256, device=device), return_complex=True)
@@ -365,19 +383,25 @@ for epoch in range(start_epoch, num_epochs):
         # Forward pass
         output, class_output = model(mix_mag)
 
-        mag_mask = torch.sigmoid(output[:, 0, :, :])
-        real_mask = torch.tanh(output[:, 1, :, :])
-        imag_mask = torch.tanh(output[:, 2, :, :])
+        # mag_mask = torch.sigmoid(output[:, 0, :, :])
+        # real_mask = torch.tanh(output[:, 1, :, :])
+        # imag_mask = torch.tanh(output[:, 2, :, :])
+        # ^^^ output is already a dictionary with keys mag_mask, real_mask, imag_mask
 
         # Reconstruct the complex spectrogram
-        Y_complex = SpectrogramReconstructor().reconstruct(mag_mask, real_mask, imag_mask)
-        percussion_sep = torch.istft(Y_complex, n_fft=256, hop_length=64, win_length=256,
-                                     window=torch.hann_window(256, device=device), length=31248)
+        Y_complex = SpectrogramReconstructor().reconstruct(output['mag_mask'], output['real_mask'], output['imag_mask'])
+        percussion_sep = istft(Y_complex, n_fft=256, hop_length=64)
 
-        # Calculate the accuracy
-        _, predicted = torch.max(class_output, 1)
-        total += true_class.size(0)
-        correct += (predicted == true_class).sum().item()
+        # Calculate the classification accuracy
+        # _, predicted = torch.max(class_output, 1) predicted est un tensor de taille (btach_size) avec les indices correspondant aux classes prédites : 0, 1, 2, 3, 4, 5, 6, 7 
+        # ca ne marche pas car les deux tensors n'ont pas la même taille
+        # _, predicted = torch.max(class_output, 1)
+        predicted = (class_output > 0.5).float() 
+        # total += true_class.size(0)
+        # total += true_class.size(0) * true_class.size(1)  # Since it's multi-label, count total elements
+        # correct += (predicted == true_class).sum().item()  # Compare predicted and true labels
+        correct = (predicted == true_class).sum().item()  # Somme des classes correctement prédites
+        total = true_class.numel()  # Nombre total d'éléments dans la matrice multi-label
 
         # Calculate the loss
         loss = criterion(percussion_sep, class_output,
@@ -408,7 +432,7 @@ for epoch in range(start_epoch, num_epochs):
             # Move data to device
             mixture = batch['mixture_audio'].to(device)
             true_percussion = batch['percussion_audio'].to(device)
-            true_class = batch['noise_class'].to(device)
+            true_class = batch['noise_labels'].to(device)
 
             # Calculate real and imaginary parts of the mixture
             mix_stft = torch.stft(mixture, n_fft=256, hop_length=64, win_length=256, window=torch.hann_window(
@@ -418,24 +442,27 @@ for epoch in range(start_epoch, num_epochs):
             # Forward pass
             output, class_output = model(mix_mag)
 
-            mag_mask = torch.sigmoid(output[:, 0, :, :])
-            real_mask = torch.tanh(output[:, 1, :, :])
-            imag_mask = torch.tanh(output[:, 2, :, :])
-
+            # mag_mask = torch.sigmoid(output[:, 0, :, :])
+            # real_mask = torch.tanh(output[:, 1, :, :])
+            # imag_mask = torch.tanh(output[:, 2, :, :])
+            # ^^^ output is already a dictionary with keys mag_mask, real_mask, imag_mask
+        
             # Reconstruct the complex spectrogram
-            Y_complex = SpectrogramReconstructor().reconstruct(mag_mask, real_mask, imag_mask)
-            percussion_sep = torch.istft(Y_complex, n_fft=256, hop_length=64, win_length=256,
-                                         window=torch.hann_window(256, device=device), length=31248)
+            Y_complex = SpectrogramReconstructor().reconstruct(output['mag_mask'], output['real_mask'], output['imag_mask'])
+            percussion_sep = istft(Y_complex, n_fft=256, hop_length=64)
 
-            # Calculate the accuracy
-            _, predicted = torch.max(class_output, 1)
-            total += true_class.size(0)
-            correct += (predicted == true_class).sum().item()
-
+            # Calculate the classification accuracy
+            # _, predicted = torch.max(class_output, 1)
+            predicted = (class_output > 0.5).float()
+            # total += true_class.size(0)
+            # correct += (predicted == true_class).sum().item()
+            correct = (predicted == true_class).sum().item
+            total = true_class.numel()
+            
             # Calculate the loss
             loss = criterion(percussion_sep, class_output,
                              true_percussion, true_class)
-
+            
             val_loss += loss.item()
             val_bar.set_description(
                 f"Epoch {epoch + 1}/{num_epochs} Validation Loss: {val_loss/(i+1):.4f}")
@@ -449,12 +476,12 @@ for epoch in range(start_epoch, num_epochs):
 
     # Save checkpoint at the end of each epoch or based on some condition
     save_checkpoint(model, optimizer, epoch, val_loss, checkpoint_dir='checkpoint',
-                    filename='checkpoint_epoch_{}.pth'.format(epoch))
-
+                    filename='checkpoint_air_engine_epoch_{}.pth'.format(epoch + 1))
+    
     if val_loss < best_val_loss:
         best_val_loss = val_loss
         patience = 5
-        torch.save(model.state_dict(), 'best_model.pth')
+        torch.save(model.state_dict(), 'best_model_air_engine.pth')
         print("Model improved. Saving the model")
     else:
         patience -= 1
@@ -489,8 +516,9 @@ with torch.no_grad():
         # Move data to device
         mixture = batch['mixture_audio'].to(device)
         true_percussion = batch['percussion_audio'].to(device)
-        true_class = batch['noise_class'].to(device)
-
+        # true_class = batch['noise_class'].to(device)
+        true_class = batch['noise_labels'].to(device)
+        
         # Calculate real and imaginary parts of the mixture
         mix_stft = torch.stft(mixture, n_fft=256, hop_length=64, win_length=256, window=torch.hann_window(
             window_length=256, device=device), return_complex=True)
@@ -499,23 +527,25 @@ with torch.no_grad():
         # Forward pass
         output, class_output = model(mix_mag)
 
-        mag_mask = torch.sigmoid(output[:, 0, :, :])
-        real_mask = torch.tanh(output[:, 1, :, :])
-        imag_mask = torch.tanh(output[:, 2, :, :])
-
+        # mag_mask = torch.sigmoid(output[:, 0, :, :])
+        # real_mask = torch.tanh(output[:, 1, :, :])
+        # imag_mask = torch.tanh(output[:, 2, :, :])
+        # ^^^ output is already a dictionary with keys mag_mask, real_mask, imag_mask
+        mag_mask = output['mag_mask']
+        real_mask = output['real_mask']
+        imag_mask = output['imag_mask']
+                
         # Reconstruct the complex spectrogram
         Y_complex = SpectrogramReconstructor().reconstruct(mag_mask, real_mask, imag_mask)
         percussion_sep = torch.istft(Y_complex, n_fft=256, hop_length=64, win_length=256,
                                      window=torch.hann_window(256, device=device), length=31248)
 
-        # Calculate the accuracy
-        _, predicted = torch.max(class_output, 1)
-        total += true_class.size(0)
-        correct += (predicted == true_class).sum().item()
-
+        # Calculate the classification accuracy
+        
+        
         # Calculate the loss
         loss = criterion(percussion_sep, class_output,
-                         true_percussion, true_class)
+                            true_percussion, true_class) 
 
         test_loss += loss.item()
 
