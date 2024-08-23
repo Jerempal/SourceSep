@@ -55,115 +55,115 @@ os.makedirs(DATASET_MIX_AUDIO_PATH, exist_ok=True)
 # %%
 
 # Create the folder if it does not exist
-# if not os.path.exists(DATASET_MIX_STFT_PATH):
-#     os.makedirs(DATASET_MIX_STFT_PATH)
+if not os.path.exists(DATASET_MIX_STFT_PATH):
+    os.makedirs(DATASET_MIX_STFT_PATH)
 
-# # Create the folder if it does not exist
-# if not os.path.exists(DATASET_PERCUSSION_STFT_PATH):
-#     os.makedirs(DATASET_PERCUSSION_STFT_PATH)
+# Create the folder if it does not exist
+if not os.path.exists(DATASET_PERCUSSION_STFT_PATH):
+    os.makedirs(DATASET_PERCUSSION_STFT_PATH)
 
-# # Create the folder if it does not exist
-# if not os.path.exists(DATASET_NOISE_STFT_PATH):
-#     os.makedirs(DATASET_NOISE_STFT_PATH)
+# Create the folder if it does not exist
+if not os.path.exists(DATASET_NOISE_STFT_PATH):
+    os.makedirs(DATASET_NOISE_STFT_PATH)
 
 # Iterate over each percussion file
-# for index, row in metadata_perc.iterrows():
-#     percussion_filename = row['name']
-#     percussion_file = os.path.join(
-#         DATASET_PERCUSSION_PATH, percussion_filename)
+for index, row in metadata_perc.iterrows():
+    percussion_filename = row['name']
+    percussion_file = os.path.join(
+        DATASET_PERCUSSION_PATH, percussion_filename)
 
-#     # Create a list to store noise information
-#     sound_info = []
+    # Create a list to store noise information
+    sound_info = []
 
-#     # Iterate over each noise class
-#     for _, noise_row in df.iterrows():
-#         noise_class = noise_row['class']
-#         noise_count = noise_row['count']
-#         noise_proportion = noise_row['proportion']
+    # Iterate over each noise class
+    for _, noise_row in df.iterrows():
+        noise_class = noise_row['class']
+        noise_count = noise_row['count']
+        noise_proportion = noise_row['proportion']
 
-#         # Calculate number of noise files to select for this class
-#         noise_files_to_select = int(
-#             noise_files_per_percussion * noise_proportion)
+        # Calculate number of noise files to select for this class
+        noise_files_to_select = int(
+            noise_files_per_percussion * noise_proportion)
 
-#         # Randomly select noise files from the current class
-#         selected_fold = np.random.randint(1, 11)
-#         noise_files_in_fold = metadata_noise[(metadata_noise['class'] == noise_class) &
-#                                              (metadata_noise['fold'] == selected_fold)]['slice_file_name'].tolist()
+        # Randomly select noise files from the current class
+        selected_fold = np.random.randint(1, 11)
+        noise_files_in_fold = metadata_noise[(metadata_noise['class'] == noise_class) &
+                                             (metadata_noise['fold'] == selected_fold)]['slice_file_name'].tolist()
 
-#         if len(noise_files_in_fold) > 0:
-#             selected_noise_files = np.random.choice(
-#                 noise_files_in_fold, noise_files_to_select, replace=False)
+        if len(noise_files_in_fold) > 0:
+            selected_noise_files = np.random.choice(
+                noise_files_in_fold, noise_files_to_select, replace=False)
 
-#             for noise_file_name in selected_noise_files:
-#                 noise_file = os.path.join(DATASET_NOISE_PATH, f"fold{
-#                                           selected_fold}", noise_file_name)
+            for noise_file_name in selected_noise_files:
+                noise_file = os.path.join(DATASET_NOISE_PATH, f"fold{
+                                          selected_fold}", noise_file_name)
 
-#                 # # Load audio files
-#                 # percussion_audio = pad_audio_center(percussion_file)
-#                 # noise_audio = pad_audio_center(noise_file)
+                # # Load audio files
+                # percussion_audio = pad_audio_center(percussion_file)
+                # noise_audio = pad_audio_center(noise_file)
 
-#                 # # Calculate stft
-#                 # stft_p = get_stft(percussion_audio)
-#                 # stft_n = get_stft(noise_audio)
+                # # Calculate stft
+                # stft_p = get_stft(percussion_audio)
+                # stft_n = get_stft(noise_audio)
 
-#                 # # create mixture
-#                 # mixture_audio, stft_mix = create_mixture(
-#                 #     percussion_audio, noise_audio)
+                # # create mixture
+                # mixture_audio, stft_mix = create_mixture(
+                #     percussion_audio, noise_audio)
 
-#                 # Save sound information
-#                 sound_info.append({
-#                     'percussion_file': percussion_filename,
-#                     'noise_file': noise_file_name,
-#                     # mixture file name
-#                     'mix_file': f"{percussion_filename}_{noise_file_name}",
-#                     'noise_class': noise_class,
-#                     'fold': selected_fold,
-#                 })
+                # Save sound information
+                sound_info.append({
+                    'percussion_file': percussion_filename,
+                    'noise_file': noise_file_name,
+                    # mixture file name
+                    'mix_file': f"{percussion_filename}_{noise_file_name}",
+                    'noise_class': noise_class,
+                    'fold': selected_fold,
+                })
 
-#                 # Save mixture audio
-#                 # mixture_audio_path = os.path.join(
-#                 #     DATASET_MIX_AUDIO_PATH, f"{percussion_filename}_{noise_file_name}.wav")
-#                 # sf.write(mixture_audio_path, mixture_audio, 7812)
+                # Save mixture audio
+                # mixture_audio_path = os.path.join(
+                #     DATASET_MIX_AUDIO_PATH, f"{percussion_filename}_{noise_file_name}.wav")
+                # sf.write(mixture_audio_path, mixture_audio, 7812)
 
-#                 # # Save mixture stft
-#                 # mix_stft_path = os.path.join(
-#                 #     DATASET_MIX_STFT_PATH, f"{percussion_filename}_{noise_file_name}.npy")
-#                 # np.save(mix_stft_path, stft_mix)
+                # # Save mixture stft
+                # mix_stft_path = os.path.join(
+                #     DATASET_MIX_STFT_PATH, f"{percussion_filename}_{noise_file_name}.npy")
+                # np.save(mix_stft_path, stft_mix)
 
-#                 # # Save noise stft
-#                 # noise_stft_path = os.path.join(
-#                 #     DATASET_NOISE_STFT_PATH, f"{noise_file_name}.npy")
-#                 # np.save(noise_stft_path, stft_n)
+                # # Save noise stft
+                # noise_stft_path = os.path.join(
+                #     DATASET_NOISE_STFT_PATH, f"{noise_file_name}.npy")
+                # np.save(noise_stft_path, stft_n)
 
-#                 # # Save percussion stft
-#                 # percussion_stft_path = os.path.join(
-#                 #     DATASET_PERCUSSION_STFT_PATH, f"{percussion_filename}.npy")
-#                 # np.save(percussion_stft_path, stft_p)
+                # # Save percussion stft
+                # percussion_stft_path = os.path.join(
+                #     DATASET_PERCUSSION_STFT_PATH, f"{percussion_filename}.npy")
+                # np.save(percussion_stft_path, stft_p)
 
-#     # Save sound information to a csv file
-#     sound_info = pd.DataFrame(sound_info)
-#     sound_info.to_csv(os.path.join(
-#         DATASET_MIX_AUDIO_PATH, f"{percussion_filename}_info.csv"), index=False)
+    # Save sound information to a csv file
+    sound_info = pd.DataFrame(sound_info)
+    sound_info.to_csv(os.path.join(
+        DATASET_MIX_AUDIO_PATH, f"{percussion_filename}_info.csv"), index=False)
 
 
-# # We have the 387 metadata files (same number of percussion)
+# We have the 387 metadata files (same number of percussion)
 
-# # we should save the metadata into a single metadata file
-# # we can use this metadata file to load the data into the dataset class
-# # we can also use it to split the data into training, validation and test sets
-# # we can also use it to load only the noise files of a specific class
+# we should save the metadata into a single metadata file
+# we can use this metadata file to load the data into the dataset class
+# we can also use it to split the data into training, validation and test sets
+# we can also use it to load only the noise files of a specific class
 
-# metadata_info = []
+metadata_info = []
 
-# for index, row in metadata_perc.iterrows():
-#     percussion_filename = row['name']
-#     sound_info = pd.read_csv(os.path.join(
-#         DATASET_MIX_AUDIO_PATH, f"{percussion_filename}_info.csv"))
-#     metadata_info.append(sound_info)
+for index, row in metadata_perc.iterrows():
+    percussion_filename = row['name']
+    sound_info = pd.read_csv(os.path.join(
+        DATASET_MIX_AUDIO_PATH, f"{percussion_filename}_info.csv"))
+    metadata_info.append(sound_info)
 
-# metadata_info = pd.concat(metadata_info)
-# metadata_info.to_csv(os.path.join(
-#     DATASET_MIX_AUDIO_PATH, "metadata.csv"), index=False)
+metadata_info = pd.concat(metadata_info)
+metadata_info.to_csv(os.path.join(
+    DATASET_MIX_AUDIO_PATH, "metadata.csv"), index=False)
 
 # %%
 

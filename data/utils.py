@@ -51,7 +51,7 @@ def pad_audio_center(audio_path, sample_rate=7812, target_length=31248):
                        len(audio) - pad_len), 'constant')
     
     audio = audio[:target_length]
-    audio = torch.tensor(audio, dtype=torch.float32)
+    # audio = torch.tensor(audio, dtype=torch.float32)
     
     return audio
 
@@ -66,14 +66,15 @@ def pad_audio_center(audio_path, sample_rate=7812, target_length=31248):
 #     return audio[:target_length]
 
 
-def dynamic_loudnorm(audio, reference, lower_db=-10, higher_db=10):
+def dynamic_loudnorm(audio, reference, lower_db=-6, higher_db=6):
     # Rescale the audio to match the loudness of the reference (percussion)
     rescaled_audio = rescale_to_match_energy(audio, reference)
     delta_loudness = random.randint(
         lower_db, higher_db)  # Random loudness variation
     gain = np.power(10.0, delta_loudness / 20.0)
-    return gain * rescaled_audio
-
+    # gain = np.power(10.0, -3 / 20.0)
+    rescaled_audio *= gain
+    return rescaled_audio
 
 def rescale_to_match_energy(segment1, segment2):
     ratio = get_energy_ratio(segment1, segment2)
