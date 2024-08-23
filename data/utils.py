@@ -4,6 +4,7 @@ import torch
 import matplotlib.pyplot as plt
 import os
 import random
+import torchaudio
 
 n_fft = 256
 hop_length = n_fft // 4
@@ -41,52 +42,20 @@ def audio_from_spectrogram(mag, phase):
     return audio
 
 
-# def pad_audio_center(audio_path):
-
-#     # Load audio files
-#     audio, _ = librosa.load(path=audio_path, sr=7812)
-
-#     # Pad audio to have length of 4 seconds
-#     audio_len = len(audio)
-#     target_len = 4 * 7812  # 4 seconds at 7812 Hz
-#     pad_len = target_len - audio_len
-
-#     if pad_len > 0:
-#         pad_left = pad_len // 2
-#         pad_right = pad_len - pad_left
-#         audio = np.pad(audio, (pad_left, pad_right), 'constant')
-#     else:
-#         audio = audio[:target_len]
-
-#     return audio
-
 def pad_audio_center(audio_path, sample_rate=7812, target_length=31248):
     audio, sr = librosa.load(audio_path, sr=sample_rate)
 
     if len(audio) < target_length:
-        repeat_count = int(np.ceil(target_length / len(audio)))
-        audio = np.tile(audio, repeat_count)
+        pad_len = (target_length - len(audio)) // 2
+        audio = np.pad(audio, (pad_len, target_length -
+                       len(audio) - pad_len), 'constant')
+    
+    audio = audio[:target_length]
+    audio = torch.tensor(audio, dtype=torch.float32)
+    
+    return audio
 
-    start = (len(audio) - target_length) // 2
-    return audio[start:start + target_length]
 
-# def pad_audio_center(audio, target_length=31248):
-
-#     if len(audio) < target_length:
-#         repeat_count = int(np.ceil(target_length / len(audio)))
-#         audio = np.tile(audio, repeat_count)
-
-#     start = (len(audio) - target_length) // 2
-#     return audio[start:start + target_length]
-
-# def pad_audio_center_path(audio_path, sample_rate=7812, target_length=31248):
-#     audio, sr = librosa.load(audio_path, sr=sample_rate)
-
-#     if len(audio) < target_length:
-#         pad_len = (target_length - len(audio)) // 2
-#         audio = np.pad(audio, (pad_len, target_length -
-#                        len(audio) - pad_len), 'constant')
-#     return audio[:target_length]
 
 # def pad_audio_center(audio, target_length=31248):
 
@@ -113,6 +82,7 @@ def rescale_to_match_energy(segment1, segment2):
 
 def get_energy(x):
     return torch.mean(x ** 2)
+    # return np.mean(x ** 2)
 
 
 def get_energy_ratio(segment1, segment2):
@@ -121,7 +91,7 @@ def get_energy_ratio(segment1, segment2):
     energy2 = max(get_energy(segment2), 1e-10)
     ratio = (energy1 / energy2) ** 0.5
     return torch.clamp(ratio, 0.02, 50)  # Avoid extreme scaling
-
+    # return np.clip(ratio, 0.02, 50)  # Avoid extreme scaling
 
 def plot_loss(train_loss, val_loss):
     plt.figure(figsize=(10, 5))
@@ -133,7 +103,7 @@ def plot_loss(train_loss, val_loss):
     plt.show()
 
 
-def save_checkpoint(model, optimizer, epoch, loss, checkpoint_dir='checkpoints', filename='checkpoint.pth'):
+def save_checkpoint(model, optimizer, epoch, train_loss, val_loss, checkpoint_dir='checkpoints', filename='checkpoint.pth'):
     # Create the directory if it doesn't exist
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
@@ -144,7 +114,8 @@ def save_checkpoint(model, optimizer, epoch, loss, checkpoint_dir='checkpoints',
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        'loss': loss,
+        'train_loss': train_loss,
+        'val_loss': val_loss
     }, checkpoint_path)
     print(f"Checkpoint saved at '{checkpoint_path}'")
 
@@ -155,11 +126,12 @@ def load_checkpoint(model, optimizer, checkpoint_dir='checkpoints', filename='ch
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"No checkpoint found at '{checkpoint_path}'")
 
-    checkpoint = torch.load(checkpoint_path)
+    checkpoint = torch.load(checkpoint_path, weights_only=True)
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     epoch = checkpoint['epoch']
-    loss = checkpoint['loss']
+    train_loss = checkpoint['train_loss']
+    val_loss = checkpoint['val_loss']
     print(f"Checkpoint loaded from '{checkpoint_path}'")
 
-    return model, optimizer, epoch, loss
+    return model, optimizer, epoch, train_loss, val_loss

@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 
@@ -97,7 +98,7 @@ def spectral_loss(prediction, target):
 
     target_stft = torch.log(torch.abs(target) + 1e-9)
     prediction_stft = torch.log(torch.abs(prediction) + 1e-9)
-    loss = F.l1_loss(target_stft, prediction_stft)
+    loss = nn.L1Loss()(target_stft, prediction_stft)
 
     return loss
 

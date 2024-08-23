@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchsummary as summary
 from torchlibrosa.stft import STFT, ISTFT, magphase
-from model.base import Base
+from base import Base
 import numpy as np
 from typing import Tuple, Dict, NoReturn
 
@@ -139,34 +139,6 @@ summary.summary(model, (1, 129, 489))
 
 # %%
 
-
-class ResidualBlock(nn.Module):
-    def __init__(self, in_c, out_c, stride=1):
-        super(ResidualBlock, self).__init__()
-
-        self.residual_block = nn.Sequential(
-            nn.BatchNorm2d(in_c),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(in_c, out_c,
-                      kernel_size=3, stride=stride, padding=1),
-            nn.BatchNorm2d(out_c),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(out_c, out_c,
-                      kernel_size=3, stride=1, padding=1),
-        )
-
-        """ Shortcut Connection """
-        self.shortcut = nn.Conv2d(
-            in_c, out_c, kernel_size=1, stride=stride, padding=0)
-
-    def forward(self, inputs):
-        x = self.residual_block(inputs)
-        s = self.shortcut(inputs)
-
-        skip = x + s
-        return skip
-
-
 class DecoderBlock(nn.Module):
     def __init__(self, in_c, out_c):
         super(DecoderBlock, self).__init__()
@@ -184,9 +156,9 @@ class DecoderBlock(nn.Module):
         # Upsample
         x = self.upsampling(x)
         # Ensure x and skip have the same spatial dimensions
-        # if x.shape[2:] != skip.shape[2:]:
-        #     x = F.interpolate(
-        #         x, size=(skip.shape[2], skip.shape[3]), mode='bilinear', align_corners=True)
+        if x.shape[2:] != skip.shape[2:]:
+            x = F.interpolate(
+                x, size=(skip.shape[2], skip.shape[3]), mode='bilinear', align_corners=True)
 
         # Concatenate
         x = torch.cat([x, skip], dim=1)
@@ -262,11 +234,10 @@ class ResUNetv2(nn.Module, Base):
         self.decoder_block3 = DecoderBlock(out_c * 2, out_c)
 
         """ Output """
-        self.last_layer = nn.Sequential(
-            # nn.Conv2d(out_c, 1, kernel_size=1, padding='same'),
-            nn.Conv2d(out_c, 1, kernel_size=1, padding=0),
-            # nn.Sigmoid()
-        )
+        # self.last_layer = nn.Sequential(
+        #     # nn.Conv2d(out_c, 1, kernel_size=1, padding='same'),
+        #     nn.Conv2d(out_c, 1, kernel_size=1, padding=0),
+        # )
 
         self.after_conv = nn.Conv2d(
             in_channels=out_c,
@@ -299,7 +270,7 @@ class ResUNetv2(nn.Module, Base):
             waveform: (batch_size, target_sources_num * output_channels, segment_samples)
         """
         batch_size, _, time_steps, freq_bins = input_tensor.shape
-        print(f'batch_size: {batch_size}')
+
         x = input_tensor.reshape(
             batch_size,
             self.target_sources_num,
@@ -337,7 +308,6 @@ class ResUNetv2(nn.Module, Base):
         # Calculate |Y|.
         out_mag = F.relu_(sp[:, None, :, :, :] * mask_mag)
 
-        # out_mag = F.relu_(sp[:, None, :, :, :] * mask_mag + linear_mag)
         # out_mag: (batch_size, target_sources_num, output_channels, time_steps, freq_bins)
 
         # Calculate Y_{real} and Y_{imag} for ISTFT.
@@ -374,8 +344,7 @@ class ResUNetv2(nn.Module, Base):
             'wav': (batch_size, segment_samples),
             'sp': (batch_size, channels_num, time_steps, freq_bins)}
         """
-        print(f'mixtures shape',
-              mixtures.shape)  # why torch.Size([2, 1, 31248]) ????
+        print(f'mixtures shape',  mixtures.shape)  # why torch.Size([2, 1, 31248]) ????
         mag, cos_in, sin_in = self.wav_to_spectrogram_phase(mixtures)
         x = mag
         print(f'x shape before pad', x.shape)
@@ -449,7 +418,9 @@ class ResUNetv2(nn.Module, Base):
 
 
 model = ResUNetv2(in_c=1, out_c=32).to("cuda")
-summary.summary(model, (1, 31248))
+input = torch.randn(32, 1, 31248).to("cuda")
 
+summary.summary(model, (1, 31248), batch_size=32)
 
 # %%
+

@@ -2,12 +2,12 @@
 import soundfile as sf
 import random
 import pandas as pd
-from train import train
+from avant_main_train import train
 from torch.utils.data import DataLoader
 from torch import optim
 from model.Last_model import *
 from metrics_loss import *
-from test import test, process_metadata, DATASET_PREDICTED_AUDIO_PATH, noise_name
+from avant_main_test import test, process_metadata, DATASET_PREDICTED_AUDIO_PATH, noise_name
 from data.utils import *
 from data.config import *
 from data.dataset import *
@@ -74,63 +74,63 @@ df, noise_name = process_metadata(
 
 # %%
 
-# for file in os.listdir(DATASET_PREDICTED_AUDIO_PATH):
-#     if file.endswith(".csv"):
-#         df = pd.read_csv(os.path.join(DATASET_PREDICTED_AUDIO_PATH, file))
-#         break
+for file in os.listdir(DATASET_PREDICTED_AUDIO_PATH):
+    if file.endswith(".csv"):
+        df = pd.read_csv(os.path.join(DATASET_PREDICTED_AUDIO_PATH, file))
+        break
 
-# # Create the dataset
-# test_separation_dataset = TestSeparationDataset(
-#     metadata_file=df, k=0.8)
+# Create the dataset
+test_separation_dataset = TestSeparationDataset(
+    metadata_file=df, k=0.8)
 
-# # Create the data loader
-# test_separation_loader = DataLoader(
-#     test_separation_dataset, batch_size=16, shuffle=True)
+# Create the data loader
+test_separation_loader = DataLoader(
+    test_separation_dataset, batch_size=16, shuffle=True)
 
-# # Plot the predicted and true percussion signals along their spectrograms
-# data = next(iter(test_separation_loader))
+# Plot the predicted and true percussion signals along their spectrograms
+data = next(iter(test_separation_loader))
 
-# # randomly select an index
-# i = random.randint(0, len(data['predicted audio']) - 1)
+# randomly select an index
+i = random.randint(0, len(data['predicted audio']) - 1)
 
-# # convert audio to numpy
-# predicted_audio = data['predicted audio'][i].cpu().detach().numpy()
-# true_percussion_audio = data['percussion audio'][i].cpu().detach().numpy()
-# noise_audio = data['noise audio'][i].cpu().detach().numpy()
-# mixture_audio = data['mixture audio'][i].cpu().detach().numpy()
+# convert audio to numpy
+predicted_audio = data['predicted audio'][i].cpu().detach().numpy()
+true_percussion_audio = data['percussion audio'][i].cpu().detach().numpy()
+noise_audio = data['noise audio'][i].cpu().detach().numpy()
+mixture_audio = data['mixture audio'][i].cpu().detach().numpy()
 
-# # Plot the predicted and true percussion signals
-# plt.figure(figsize=(20, 10))
-# titles = ["Predicted Percussion Signal", "True Percussion Signal", "Noise Signal with noise level: {:.2f}".format(
-#     data['noise level'][i]), "Mixture Signal with noise level: {:.2f}".format(data['noise level'][i])]
-# audios = [predicted_audio, true_percussion_audio, noise_audio, mixture_audio]
+# Plot the predicted and true percussion signals
+plt.figure(figsize=(20, 10))
+titles = ["Predicted Percussion Signal", "True Percussion Signal", "Noise Signal with noise level: {:.2f}".format(
+    data['noise level'][i]), "Mixture Signal with noise level: {:.2f}".format(data['noise level'][i])]
+audios = [predicted_audio, true_percussion_audio, noise_audio, mixture_audio]
 
-# for j in range(4):
-#     plt.subplot(2, 4, j+1)
-#     plt.title(titles[j])
-#     librosa.display.waveshow(audios[j], sr=7812)
-#     plt.ylim([-1, 1])
+for j in range(4):
+    plt.subplot(2, 4, j+1)
+    plt.title(titles[j])
+    librosa.display.waveshow(audios[j], sr=7812)
+    plt.ylim([-1, 1])
 
-# # Plot the predicted and true percussion spectrograms
-# for j in range(4):
-#     plt.subplot(2, 4, j+5)
-#     plt.title(titles[j] + " Spectrogram")
-#     spectrogram = librosa.amplitude_to_db(np.abs(librosa.stft(
-#         audios[j], n_fft=n_fft, hop_length=hop_length)), ref=np.max)
-#     librosa.display.specshow(spectrogram, sr=7812, hop_length=hop_length)
-#     plt.colorbar(format='%+2.0f dB')
+# Plot the predicted and true percussion spectrograms
+for j in range(4):
+    plt.subplot(2, 4, j+5)
+    plt.title(titles[j] + " Spectrogram")
+    spectrogram = librosa.amplitude_to_db(np.abs(librosa.stft(
+        audios[j], n_fft=n_fft, hop_length=hop_length)), ref=np.max)
+    librosa.display.specshow(spectrogram, sr=7812, hop_length=hop_length)
+    plt.colorbar(format='%+2.0f dB')
 
-# plt.tight_layout()
-# plt.show()
+plt.tight_layout()
+plt.show()
 
-# # show the path of all the files
-# print(f'Predicted audio path: {data["path pred"][i]}')
-# print(f'True percussion audio path: {data["path true"][i]}')
-# print(f'Noise audio path: {data["path noise"][i]}')
+# show the path of all the files
+print(f'Predicted audio path: {data["path pred"][i]}')
+print(f'True percussion audio path: {data["path true"][i]}')
+print(f'Noise audio path: {data["path noise"][i]}')
 
-# # Save the mixture audio
-# sf.write("mixture_audio.wav", mixture_audio, 7812)
-# print(f'path of mix saved', os.path.abspath("mixture_audio.wav"))
+# Save the mixture audio
+sf.write("mixture_audio.wav", mixture_audio, 7812)
+print(f'path of mix saved', os.path.abspath("mixture_audio.wav"))
 
 # # %%
 # %%
