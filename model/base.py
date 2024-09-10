@@ -2,13 +2,13 @@ import torch
 import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
-from torchlibrosa.stft import magphase
+from torchlibrosa.stft import magphase, STFT, ISTFT
 
 
 class Base:
     def __init__(self):
         pass
-
+      
     def spectrogram(self, input, eps=0.):
         (real, imag) = self.stft(input)
         return torch.clamp(real ** 2 + imag ** 2, eps, np.inf) ** 0.5

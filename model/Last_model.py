@@ -139,36 +139,6 @@ summary.summary(model, (1, 129, 489))
 
 # %%
 
-class DecoderBlock(nn.Module):
-    def __init__(self, in_c, out_c):
-        super(DecoderBlock, self).__init__()
-
-        self.upsampling = nn.ConvTranspose2d(
-            in_c, out_c, kernel_size=2, stride=2, padding=0, dilation=1)
-        self.residual_block = ResidualBlock(
-            out_c * 2, out_c)
-        # self.upsampling = nn.Upsample(
-        #     scale_factor=2, mode='bilinear', align_corners=True)
-        # self.residual_block = ResidualBlock(
-        #     in_c + out_c, out_c)
-
-    def forward(self, x, skip):
-        # Upsample
-        x = self.upsampling(x)
-        # Ensure x and skip have the same spatial dimensions
-        if x.shape[2:] != skip.shape[2:]:
-            x = F.interpolate(
-                x, size=(skip.shape[2], skip.shape[3]), mode='bilinear', align_corners=True)
-
-        # Concatenate
-        x = torch.cat([x, skip], dim=1)
-
-        # Residual block
-        x = self.residual_block(x)
-
-        return x
-
-
 class ResUNetv2(nn.Module, Base):
     def __init__(self, in_c, out_c):
         super(ResUNetv2, self).__init__()

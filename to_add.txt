@@ -1,0 +1,318 @@
+# %%
+# plot some waveform along their spectrogram
+for i in range(2):
+    mixture_audio = data['mixture audio'][i]
+    mixture_mag = data['mixture_mag'][i]
+    percussion_audio = data['percussion audio'][i]
+    percussion_mag = data['percussion_mag'][i]
+    noise_audio = data['noise audio'][i]
+    noise_mag = data['noise_mag'][i]
+
+    # plot the mixture waveform
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(mixture_audio)
+    plt.title('Mixture Waveform')    plt.tight_layout()
+
+    # plot the mixture spectrogram
+    plt.subplot(1, 2, 2)
+    librosa.display.specshow(librosa.amplitude_to_db(mixture_mag, ref=np.max),
+                             y_axis='linear', x_axis='time', sr=7812, n_fft=n_fft, hop_length=hop_length)
+    plt.colorbar(format='%+2.0f dB')
+    plt.title('Mixture Spectrogram')
+    plt.tight_layout()
+    plt.show()
+
+    # plot the percussion waveform
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(percussion_audio)
+    plt.title('Percussion Waveform')
+    plt.tight_layout()
+
+    # plot the percussion spectrogram
+    plt.subplot(1, 2, 2)
+    librosa.display.specshow(librosa.amplitude_to_db(percussion_mag, ref=np.max),
+                             y_axis='linear', x_axis='time', sr=7812, n_fft=n_fft, hop_length=hop_length)
+    plt.colorbar(format='%+2.0f dB')
+    plt.title('Percussion Spectrogram')
+    plt.tight_layout()
+    plt.show()
+
+    # plot the noise waveform
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(noise_audio)
+    plt.title('Noise Waveform')
+    plt.tight_layout()
+
+    # plot the noise spectrogram
+    plt.subplot(1, 2, 2)
+    librosa.display.specshow(librosa.amplitude_to_db(noise_mag, ref=np.max),
+                             y_axis='linear', x_axis='time', sr=7812, n_fft=n_fft, hop_length=hop_length)
+    plt.colorbar(format='%+2.0f dB')
+    plt.title('Noise Spectrogram')
+    plt.tight_layout()
+    plt.show()
+
+
+# %%
+# reconstruct the waveform from the mixture spectrogram
+mixture_audio = data['mixture audio'][0]
+mixture_mag = data['mixture_mag'][0]
+mixture_phase = data['mixture_phase'][0]
+
+mixture_audio_reconstructed = audio_from_spectrogram(
+    mixture_mag, mixture_phase)
+
+# plot the original and reconstructed mixture waveform
+cpt = 0
+plt.figure(figsize=(12, 5))
+for cpt, y in enumerate([mixture_audio, mixture_audio_reconstructed]):
+    plt.subplot(1, 2, cpt + 1)
+    plt.plot(y)
+    plt.title('Original Mixture Waveform' if cpt ==
+              0 else 'Reconstructed Mixture Waveform')
+
+plt.tight_layout()
+plt.show()
+
+# calculate the error between the original and reconstructed mixture waveform
+error = calculate_error(mixture_audio, mixture_audio_reconstructed)
+print(f"Error between original and reconstructed mixture waveform: {error}")
+
+# reconstruct the waveform from the percussion spectrogram
+percussion_audio = data['percussion audio'][0]
+percussion_mag = data['percussion_mag'][0]
+percussion_phase = data['percussion_phase'][0]
+
+percussion_audio_reconstructed = audio_from_spectrogram(
+    percussion_mag, percussion_phase)
+
+# plot the original and reconstructed percussion waveform
+cpt = 0
+plt.figure(figsize=(12, 5))
+for cpt, y in enumerate([percussion_audio, percussion_audio_reconstructed]):
+    plt.subplot(1, 2, cpt + 1)
+    plt.plot(y)
+    plt.title('Original Percussion Waveform' if cpt ==
+              0 else 'Reconstructed Percussion Waveform')
+
+plt.tight_layout()
+plt.show()
+
+# calculate the error between the original and reconstructed percussion waveform
+error = calculate_error(percussion_audio, percussion_audio_reconstructed)
+print(f"Error between original and reconstructed percussion waveform: {error}")
+
+# reconstruct the waveform from the noise spectrogram
+noise_audio = data['noise audio'][0]
+noise_mag = data['noise_mag'][0]
+noise_phase = data['noise_phase'][0]
+
+noise_audio_reconstructed = audio_from_spectrogram(noise_mag, noise_phase)
+
+# plot the original and reconstructed noise waveform
+cpt = 0
+plt.figure(figsize=(12, 5))
+for cpt, y in enumerate([noise_audio, noise_audio_reconstructed]):
+    plt.subplot(1, 2, cpt + 1)
+    plt.plot(y)
+    plt.title('Original Noise Waveform' if cpt ==
+              0 else 'Reconstructed Noise Waveform')
+
+plt.tight_layout()
+plt.show()
+
+# calculate the error between the original and reconstructed noise waveform
+error = calculate_error(noise_audio, noise_audio_reconstructed)
+print(f"Error between original and reconstructed noise waveform: {error}")
+
+# %%
+# Define the model
+
+# CRNN model the ouput will be the separated percussion waveform reconstructed from the separated percussion spectrogram and the reconstructed noise waveform from the separated noise spectrogram
+# For our input we will use the mixture spectrogram
+# We will use the mixture spectrogram to predict the separated percussion spectrogram
+
+
+def magnitude_spectrogram_loss(pred_mag, target_mag):
+    return F.l1_loss(pred_mag, target_mag)
+
+
+def phase_loss(pred_phase, target_phase):
+    return torch.mean(1 - torch.cos(pred_phase - target_phase))
+
+
+def total_loss(pred_mag, target_mag, pred_phase, target_phase, alpha=1.0, beta=0.5):
+    mag_loss = magnitude_spectrogram_loss(pred_mag, target_mag)
+    phase_loss = phase_loss(pred_phase, target_phase)
+    return alpha * mag_loss + beta * phase_loss
+
+
+def SDR(pred_source, true_source):
+    # pred_source: (batch_size, num_sources, num_samples)
+    # true_source: (batch_size, num_sources, num_samples)
+    # compute SDR for each source
+    batch_size, num_sources, num_samples = pred_source.size()
+    SDR = torch.zeros(batch_size, num_sources)
+    for i in range(batch_size):
+        for j in range(num_sources):
+            target = true_source[i, j]
+            estimate = pred_source[i, j]
+            energy_target = torch.dot(target, target)
+            energy_error = torch.dot(target - estimate, target - estimate)
+            SDR[i, j] = 10 * torch.log10(energy_target / energy_error)
+    return SDR
+
+
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, padding):
+        super(ConvBlock, self).__init__()
+        self.conv = nn.Conv2d(in_channels, out_channels,
+                              kernel_size=kernel_size, stride=stride, padding=padding)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        return x
+
+
+class RecurrentBlock(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, bidirectional=False):
+        super(RecurrentBlock, self).__init__()
+        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size,
+                            num_layers=num_layers, batch_first=True, bidirectional=bidirectional)
+
+    def forward(self, x):
+        output, _ = self.lstm(x)
+        return output
+
+
+class CRNN(nn.Module):
+    def __init__(self):
+        super(CRNN, self).__init__()
+
+        self.conv1 = ConvBlock(in_channels=1, out_channels=64, kernel_size=(
+            3, 3), stride=(1, 1), padding=(1, 1))
+        self.conv2 = ConvBlock(in_channels=64, out_channels=128, kernel_size=(
+            3, 3), stride=(1, 1), padding=(1, 1))
+
+        self.rnn = RecurrentBlock(
+            input_size=128, hidden_size=256, num_layers=2, bidirectional=True)
+
+        self.fc1 = nn.Linear(in_features=512, out_features=256)
+        self.fc2 = nn.Linear(in_features=256, out_features=256)
+        # Adjust output channels to match spectrogram shape
+        self.fc3 = nn.Linear(in_features=256, out_features=489)
+
+    def forward(self, x):
+
+        x = self.conv1(x)
+        x = self.conv2(x)
+
+        # x = x.permute(0, 2, 1, 3).contiguous()  # Reshape for RNN
+
+        # # Flatten to (batch_size, freq_bins, time_frames * channels)
+        # x = x.view(x.size(0), x.size(1), -1)
+        # x = self.rnn(x)
+
+        # x = F.relu(self.fc1(x))
+        # x = F.relu(self.fc2(x))
+        # x = self.fc3(x)
+
+        batch_size, channels, freq_bins, time_frames = x.size()
+        x = x.view(batch_size, channels, freq_bins * time_frames)
+        # Swap dimensions to (batch_size, sequence_length, input_size)
+        x = x.permute(0, 2, 1)
+
+        x, _ = self.rnn(x)
+        print(x.size())
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+
+        return x
+
+
+# %%
+# Training the model
+model = CRNN()
+
+# Define optimizer and loss function
+optimizer = optim.Adam(model.parameters(), lr=0.001)
+num_epochs = 3
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+model.to(device)
+
+for epoch in tqdm(range(num_epochs), desc="Epochs"):
+    model.train()
+    train_loss = 0.0
+    train_sdr = 0.0
+    for data in tqdm(train_loader, desc="Training"):
+        mixture_mag = data['mixture_mag'].unsqueeze(1).to(device)
+        percussion_mag = data['percussion_mag'].to(device)
+        noise_mag = data['noise_mag'].to(device)
+        target_phase = data['mixture_phase'].to(device)
+        percussion_phase = data['percussion_phase'].to(device)
+        noise_phase = data['noise_phase'].to(device)
+
+        # Zero the parameter gradients
+        optimizer.zero_grad()
+
+        # Forward pass
+        pred_mag = model(mixture_mag)
+
+        # Compute loss
+        loss = total_loss(pred_mag, percussion_mag, noise_mag,
+                          target_phase, alpha=1.0, beta=0.5)
+
+        # Backward pass
+        loss.backward()
+        optimizer.step()
+
+        # Compute SDR
+        pred_source = pred_mag * data['mixture_phase'].to(device)
+        true_source = percussion_mag * data['mixture_phase'].to(device)
+        sdr = SDR(pred_source, true_source)
+
+        train_loss += loss.item()
+        train_sdr += sdr.mean().item()
+
+    train_loss /= len(train_loader)
+    train_sdr /= len(train_loader)
+
+    # Validation
+    model.eval()
+    val_loss = 0.0
+    val_sdr = 0.0
+    with torch.no_grad():
+        for data in tqdm(val_loader, desc="Validation"):
+            mixture_mag = data['mixture_mag'].unsqueeze(1).to(device)
+            percussion_mag = data['percussion_mag'].to(device)
+            noise_mag = data['noise_mag'].to(device)
+
+            # Forward pass
+            pred_mag = model(mixture_mag)
+
+            # Compute loss
+            loss = total_loss(pred_mag, percussion_mag, noise_mag)
+
+            # Compute SDR
+            pred_source = pred_mag * data['mixture_phase'].to(device)
+            true_source = percussion_mag * data['mixture_phase'].to(device)
+            sdr = SDR(pred_source, true_source)
+
+            val_loss += loss.item()
+            val_sdr += sdr.mean().item()
+
+    val_loss /= len(val_loader)
+    val_sdr /= len(val_loader)
+
+    print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {train_loss:.4f}, Train SDR: {
+          train_sdr:.4f}, Val Loss: {val_loss:.4f}, Val SDR: {val_sdr:.4f}")
+
+# %%

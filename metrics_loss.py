@@ -1,7 +1,8 @@
+#%%
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+from torchmetrics.audio import SignalDistortionRatio, ScaleInvariantSignalDistortionRatio
 
 def SDR(target, prediction):
     """
@@ -62,7 +63,6 @@ def SISDR(target, prediction):
 
     return si_sdr
 
-
 def SDR_i(target, prediction, mixture):
     """
         Compute the signal-to-distortion ratio improvement
@@ -83,7 +83,32 @@ def SDR_i(target, prediction, mixture):
 
     return sdr_improvement
 
+#%%
+sdr_metric = SignalDistortionRatio()
+si_sdr_metric = ScaleInvariantSignalDistortionRatio()
 
+val_loss = 0
+val_sdr_epoch = 0
+val_si_sdr_epoch = 0
+
+pred = torch.rand(25, 1, 31248)
+target = torch.rand(25, 1, 31248)
+mixture = torch.rand(25, 1, 31248)
+
+# Calculate SDR and SI-SDR using torchmetrics
+si_sdr = si_sdr_metric(pred, target)
+sdri = sdr_metric(target, pred) - \
+    sdr_metric(target, mixture)
+
+val_sdr_epoch += sdri.item()
+val_si_sdr_epoch += si_sdr.item()
+
+print(f"SDR improvement: {val_sdr_epoch}")
+print(f"SI-SDR: {val_si_sdr_epoch}")
+print(f'si_sdr: {si_sdr}')
+print(f'sdri: {sdri}')
+
+#%%
 # define the loss function
 
 

@@ -1,0 +1,288 @@
+
+#%%
+# #%%
+# # accuracy score multi-label
+# accuracy_m = accuracy_score(all_labels, all_preds)
+# # hamming loss multi-label
+# hamming = hamming_loss(all_labels, all_preds)
+# # precision, recall, f1-score multi-label
+# precision, recall, f1, true_sum = precision_recall_fscore_support(all_labels, all_preds, average='weighted', zero_division=0)
+
+# print(f"Testing Loss: {test_loss:.4f}, Testing Accuracy: {accuracy:.4f}")
+# print(f"Testing Accuracy (multi-label): {accuracy_m:.4f}")
+# print(f"Hamming Loss (multi-label): {hamming:.4f}")
+# print(f"Precision (multi-label): {precision:.4f}")
+# print(f"Recall (multi-label): {recall:.4f}")
+# print(f"F1-score (multi-label): {f1:.4f}")
+
+# # confusion matrix
+# labels = ['air_conditioner', 'car_horn', 'children_playing', 'dog_bark', 'drilling', 'engine_idling', 'siren', 'jackhammer']
+# cm = multilabel_confusion_matrix(all_labels, all_preds)
+
+# # plot confusion matrix
+# from sklearn.metrics import ConfusionMatrixDisplay
+# fig, ax = plt.subplots(2, 4, figsize=(20, 10))
+# for i in range(8):
+#     disp = ConfusionMatrixDisplay(cm[i], display_labels=[0, 1])
+#     disp.plot(ax=ax[i//4, i % 4])
+#     disp.ax_.set_title(labels[i])
+# plt.show()
+
+# # classification report multilabel
+# print(classification_report(all_labels, all_preds, target_names=labels, zero_division=0))
+
+# # save the results
+# results = {
+#     'test_loss': test_loss,
+#     'accuracy': accuracy,
+#     'accuracy_m': accuracy_m,
+#     'hamming': hamming,
+#     'precision': precision,
+#     'recall': recall,
+#     'f1': f1
+# }
+
+# #%%
+# np.save('results_spectralv2.npy', results)
+
+
+# # %%
+
+# # inference on a single audio file
+# # load the model
+# model = ResUNet(in_c=1, out_c=16).to("cuda")
+# model.load_state_dict(torch.load('best_model_spectralv2.pth'))
+# model.eval()
+
+# # load a test file from the test loader
+# test_file = next(iter(test_loader))
+# mix_stft = test_file['mix_stft'].to(device)
+# mixture_audio = test_file['mixture_audio'].to(device)
+# percussion_audio = test_file['percussion_audio'].to(device)
+# true_percussion_stft = test_file['perc_stft'].to(device)
+# true_class = test_file['noise_labels'].to(device)
+
+# # forward pass
+# output, class_output = model(torch.abs(mix_stft))
+
+# # reconstruct the complex spectrogram
+# sep_output = SpectrogramReconstructor().reconstruct(
+#     output['mag_mask'], output['real_mask'], output['imag_mask'], mix_stft)
+# percussion_sep = istft(sep_output, n_fft=256, hop_length=64)
+
+# # calculate the loss
+# loss = criterion(sep_output, class_output, true_percussion_stft,
+#                  true_class, alpha=0.7, beta=0.3, spectrogram_loss=True)
+
+# # calculate multi-label classification accuracy
+# predicted = (torch.sigmoid(class_output) > 0.5).float()
+# # total for a multi-label classification:
+# total = true_class.size(0) * true_class.size(1)
+# correct = (predicted == true_class).float().sum().item()
+
+# # confusion matrix for multilabel classification
+# all_preds = []
+# all_labels = []
+# all_preds.extend(predicted.cpu().numpy())
+# all_labels.extend(true_class.cpu().numpy())
+
+# # accuracy score for correctly predicting positive and negative classes
+# accuracy_m = accuracy_score(all_labels, all_preds)
+
+# # hamming loss multi-label
+# hamming = hamming_loss(all_labels, all_preds)
+# # precision, recall, f1-score multi-label
+# precision, recall, f1, true_sum = precision_recall_fscore_support(all_labels, all_preds, average='weighted', zero_division=0)
+
+# print(f"Testing Loss: {loss:.4f}, Testing Accuracy: {correct/total:.4f}")
+# print(f"Testing Accuracy (multi-label): {accuracy_m:.4f}")
+# print(f"Hamming Loss (multi-label): {hamming:.4f}")
+# print(f"Precision (multi-label): {precision:.4f}")
+# print(f"Recall (multi-label): {recall:.4f}")
+# print(f"F1-score (multi-label): {f1:.4f}")
+
+# # confusion matrix
+# labels = ['air_conditioner', 'car_horn', 'children_playing', 'dog_bark', 'drilling', 'engine_idling', 'siren', 'jackhammer']
+# cm = multilabel_confusion_matrix(all_labels, all_preds)
+
+# # plot confusion matrix
+# from sklearn.metrics import ConfusionMatrixDisplay
+# fig, ax = plt.subplots(2, 4, figsize=(20, 10))
+# for i in range(8):
+#     disp = ConfusionMatrixDisplay(cm[i], display_labels=[0, 1])
+#     disp.plot(ax=ax[i//4, i % 4])
+#     disp.ax_.set_title(labels[i])
+# plt.show()
+
+# # classification report multilabel
+# print(classification_report(all_labels, all_preds, target_names=labels, zero_division=0))
+
+
+# %%
+
+# # plot percussions and separated percussions
+# plt.figure(figsize=(10, 15))
+# for i in range(3):
+    
+#     plt.subplot(3, 1, 1)
+#     plt.title('Mixture')
+#     plt.plot(mixture_audio[i].cpu().numpy())
+#     plt.xlabel('Time (s)')
+#     plt.ylabel('Amplitude')
+    
+#     plt.subplot(3, 1, 2)
+#     plt.title('Separated Percussion')
+#     plt.plot(percussion_sep[i].detach().cpu().numpy())
+#     plt.xlabel('Time (s)')
+#     plt.ylabel('Amplitude')
+    
+#     plt.subplot(3, 1, 3)
+#     plt.title('True Percussion')
+#     plt.plot(percussion_audio[i].cpu().numpy()) 
+#     plt.xlabel('Time (s)')
+#     plt.ylabel('Amplitude')
+    
+#     plt.tight_layout()
+#     plt.show()
+    
+    
+
+
+
+# %%
+# k = np.random.randint(0, 12)
+
+# # plot the mixture, separated percussion and true percussion
+# plt.figure(figsize=(10, 15))
+# plt.subplot(3, 1, 1)
+# plt.title('Mixture')
+# plt.plot(mixture_audio[k].cpu().numpy())
+# plt.xlabel('Time (s)')
+# plt.ylabel('Amplitude')
+
+# plt.subplot(3, 1, 2)
+# plt.title('Separated Percussion')
+# plt.plot(percussion_sep[k].detach().cpu().numpy())
+# plt.xlabel('Time (s)')
+# plt.ylabel('Amplitude')
+
+# plt.subplot(3, 1, 3)
+# plt.title('True Percussion')
+# plt.plot(percussion_audio[k].cpu().numpy())
+# plt.xlabel('Time (s)')
+# plt.ylabel('Amplitude')
+
+# plt.tight_layout()
+# plt.show()
+# # %%
+# k = np.random.randint(0, 12)
+
+# # Data and titles for plotting
+# audio_data = [
+#     (mixture_audio, 'Mixture'),
+#     (percussion_audio, 'True Percussion'),
+#     (percussion_sep.detach(), 'Separated Percussion')
+# ]
+
+# spectrogram_data = [
+#     (mix_stft, 'Mixture Spectrogram'),
+#     (true_percussion_stft, 'True Percussion Spectrogram'),
+#     (sep_output, 'Separated Percussion Spectrogram')
+# ]
+
+# plt.figure(figsize=(10, 15))
+
+# # Plot audio waveforms
+# for i, (data, title) in enumerate(audio_data):
+#     plt.subplot(3, 2, 2 * i + 1)
+#     plt.title(title)
+#     plt.plot(data[k].cpu().numpy())
+#     plt.xlabel('Time (s)')
+#     plt.ylabel('Amplitude')
+
+# # Plot spectrograms
+# for i, (data, title) in enumerate(spectrogram_data):
+#     plt.subplot(3, 2, 2 * (i + 1))
+#     plt.title(title)
+#     librosa.display.specshow(librosa.amplitude_to_db(np.abs(data[k].detach().cpu().numpy()), ref=np.max), 
+#                              y_axis='linear', x_axis='time', sr=7812, n_fft=256, hop_length=64)
+
+# plt.tight_layout()
+# plt.show()
+
+# %%
+
+def energy_ratio(true_audio, separated_audio):
+    true_energy = np.sum(true_audio ** 2)
+    separated_energy = np.sum(separated_audio ** 2)
+    ratio = separated_energy / true_energy
+    return ratio
+
+energy_ratios = []
+for i in range(12):
+    energy_ratios.append(energy_ratio(percussion_audio[i].cpu().numpy(), percussion_sep[i].detach().cpu().numpy()))
+    
+energy_ratios = np.array(energy_ratios)
+print(f"Energy Ratios: {energy_ratios}")
+
+highest_ratio_indices = np.argsort(energy_ratios)[-3:]
+for i in highest_ratio_indices:
+    plt.figure(figsize=(10, 5))
+    plt.subplot(2, 1, 1)
+    plt.title('Separated Percussion')
+    plt.plot(percussion_sep[i].detach().cpu().numpy())
+    plt.xlabel('Time (s)')
+    plt.ylabel('Amplitude')
+    
+    plt.subplot(2, 1, 2)
+    plt.title('True Percussion')
+    plt.plot(percussion_audio[i].cpu().numpy())
+    plt.xlabel('Time (s)')
+    plt.ylabel('Amplitude')
+    
+    plt.tight_layout()
+    plt.show()
+#%%
+lowest_ratio_indices = np.argsort(energy_ratios)[:3]
+for i in lowest_ratio_indices:
+    plt.figure(figsize=(10, 5))
+    plt.subplot(2, 1, 1)
+    plt.title('Separated Percussion')
+    plt.plot(percussion_sep[i].detach().cpu().numpy())
+    plt.xlabel('Time (s)')
+    plt.ylabel('Amplitude')
+    
+    plt.subplot(2, 1, 2)
+    plt.title('True Percussion')
+    plt.plot(percussion_audio[i].cpu().numpy())
+    plt.xlabel('Time (s)')
+    plt.ylabel('Amplitude')
+    
+    plt.tight_layout()
+    plt.show()
+
+
+
+# %%
+# #output the magnitude mask and the separated percussion spectrogram
+# plt.figure(figsize=(10, 5))
+# plt.title('Magnitude Mask')
+# plt.imshow(output['mag_mask'][1].detach().cpu().numpy(), aspect='auto', origin='lower')
+# plt.colorbar()
+# plt.show()
+
+# plt.figure(figsize=(10, 5))
+# plt.title('Separated Percussion Spectrogram')
+# librosa.display.specshow(librosa.amplitude_to_db(np.abs(sep_output[1].detach().cpu().numpy()), ref=np.max), 
+#                          y_axis='linear', x_axis='time', sr=7812, n_fft=256, hop_length=64)
+# plt.colorbar()
+# plt.show()
+
+# plt.figure(figsize=(10, 5))
+# plt.title('Percussion Spectrogram')
+# librosa.display.specshow(librosa.amplitude_to_db(np.abs(true_percussion_stft[1].detach().cpu().numpy()), ref=np.max), 
+#                          y_axis='linear', x_axis='time', sr=7812, n_fft=256, hop_length=64)
+# plt.colorbar()
+# plt.show()
+
+# %%

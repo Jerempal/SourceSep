@@ -11,13 +11,8 @@ hop_length = n_fft // 4
 
 
 def get_stft(audio):
-
-    # Normalize audio
-    audio /= np.max(np.abs(audio))
-
-    # Calculate stft
-    stft = librosa.stft(audio, n_fft=n_fft, hop_length=hop_length)
-
+    stft = torch.stft(torch.tensor(audio, dtype=torch.float32).to("cuda"), n_fft=256, hop_length=64,
+                      win_length=256, window=torch.hann_window(window_length=256, device='cuda'), return_complex=True)
     return stft
 
 
@@ -64,7 +59,7 @@ def pad_audio_center(audio_path, sample_rate=7812, target_length=31248):
 #         audio = np.pad(audio, (pad_len, target_length -
 #                        len(audio) - pad_len), 'constant')
 #     return audio[:target_length]
-
+torchaudio.transforms.Vol
 
 def dynamic_loudnorm(audio, reference, lower_db=-6, higher_db=6):
     # Rescale the audio to match the loudness of the reference (percussion)

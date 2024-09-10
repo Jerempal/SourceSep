@@ -6,6 +6,7 @@ DATASET_PERCUSSION_PATH = "C:\\Users\\jejep\\Desktop\\STAGE\\J.Palmilha\\data"
 
 # Path to mix audio
 DATASET_MIX_AUDIO_PATH = "C:\\Users\\jejep\\Desktop\\STAGE\\data\\mixture_audio"
+DATASET_MIX_AUDIO_PATH2 = "C:\\Users\\jejep\\Desktop\\STAGE\\data\\mixture_audio_k_on_perc"
 
 # STFT path
 DATASET_MIX_STFT_PATH = "C:\\Users\\jejep\\Desktop\\STAGE\\data\\mixture_stft"

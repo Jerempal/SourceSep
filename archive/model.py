@@ -159,3 +159,5 @@ print(f"Number of parameters: {sum(p.numel() for p in model.parameters())}")
 
 # now using torchsummary
 summary(model, (129, 489))
+
+# %%

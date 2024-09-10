@@ -1,0 +1,136 @@
+class MixtureDataset(Dataset):
+    # noise class is a string maybe
+    def __init__(self, metadata_file, k, noise_class=None):
+
+        self.metadata = metadata_file
+        self.k = k
+        self.noise_class = noise_class
+        self.noise_class_list = [
+            'air_conditioner',
+            'car_horn',
+            'children_playing',
+            'dog_bark',
+            'drilling',
+            'engine_idling',
+            'siren',
+            'jackhammer']
+
+    def __len__(self):
+        if self.noise_class is not None:
+            return len(self.metadata[self.metadata['noise_class'] == self.noise_class])
+        # now that we have a list of noise classes we can iterate over them
+        else:
+            return len(self.metadata)
+
+    def __getitem__(self, idx):
+
+        # get the row with only the noise class we want
+        if self.noise_class is not None:
+            row = self.metadata[self.metadata['noise_class']
+                                == self.noise_class].iloc[idx]
+        else:
+            row = self.metadata.iloc[idx]
+
+        k = self.k  # noise level
+
+        # Load the percussion_audio files percusion and noise
+        percussion_path = os.path.join(
+            DATASET_PERCUSSION_PATH, row['percussion_file'])
+        percussion_audio = pad_audio_center(percussion_path)
+
+        noise_path = os.path.join(
+            DATASET_NOISE_PATH, f"fold{row['fold']}", row['noise_file'])
+        noise_audio = pad_audio_center(noise_path)
+
+        # create mixture audio
+        mixture_audio, _ = create_mixture(
+            percussion_audio, noise_audio, k)
+
+        # normalize the percussion_audio
+        percussion_audio /= np.max(
+            np.abs(percussion_audio))
+        percussion_audio = k * percussion_audio
+
+        # noise_audio /= np.max(np.abs(noise_audio))
+        # noise_audio = (1-k) * noise_audio
+
+        return {
+            # 'path true': percussion_path,
+            'percussion audio': percussion_audio,
+
+            # 'name mix': row['mix name'],
+            'mixture audio': mixture_audio,
+
+            # 'path noise': noise_path,
+            'noise class': torch.tensor(self.noise_class_list.index(row['noise_class'])),
+            # 'noise percussion_audio': noise_audio,
+        }
+
+# Define the dataset
+
+
+class TestSeparationDataset(Dataset):
+    def __init__(self, metadata_file, k, noise_class=None):
+
+        self.metadata = metadata_file
+        self.k = k  # noise level
+        self.noise_class = noise_class
+
+    def __len__(self):
+        return len(self.metadata)
+
+    def __getitem__(self, idx):
+        row = self.metadata.iloc[idx]
+        k = self.k  # noise level
+
+        DATASET_PREDICTED_percussion_path = "C:\\Users\\jejep\\Desktop\\STAGE\\data\\predicted_audio_{noise_class}".format(
+            noise_class=self.noise_class)
+
+        # Load the predicted audio
+        predicted_percussion_path = os.path.join(
+            DATASET_PREDICTED_percussion_path, row['predicted name'])
+        predicted_audio = librosa.load(
+            predicted_percussion_path, sr=7812)[0]
+
+        # Load the true percussion audio
+        percussion_path = os.path.join(
+            DATASET_PERCUSSION_PATH, row['percussion name'] + '.wav')
+        percussion_audio = pad_audio_center(
+            percussion_path)
+
+        # Load the mixture audio
+        # mixture_audio = librosa.load(os.path.join(
+        #     DATASET_MIX_percussion_path, row['mix name'] + '.wav'), sr=7812)[0]
+
+        # Load the noise audio
+        noise_path = os.path.join(
+            DATASET_NOISE_PATH, f"fold{row['fold']}", row['noise name'])
+        noise_audio = pad_audio_center(noise_path)
+
+        # create mixture audio
+        mixture_audio, _ = create_mixture(
+            percussion_audio, noise_audio, k)
+
+        percussion_audio /= np.max(
+            np.abs(percussion_audio))
+        percussion_audio = k * percussion_audio
+        noise_audio /= np.max(np.abs(noise_audio))
+        noise_audio = (1-k) * noise_audio
+
+        return {
+            'path pred': predicted_percussion_path,
+            'predicted audio': predicted_audio,
+
+            'path true': percussion_path,
+            'percussion audio': percussion_audio,
+
+            'name mix': row['mix name'],
+            'mixture audio': mixture_audio,
+
+            'path noise': noise_path,
+            'noise audio': noise_audio,
+            'noise level': 1-k
+        }
+
+
+
